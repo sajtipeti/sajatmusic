@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "Saját Music",
+    "slug": "sajat-music",
+    "owner": "omoneko75s-team",
+    "newArchEnabled": false,
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "POST_NOTIFICATIONS",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.omonekosteam.SajatMusic"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-audio",
+      "expo-file-system",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraForegroundServiceTypes": [
+              "mediaPlayback"
+            ]
+          }
+        }
+      ],
+      [
+        "expo-navigation-bar",
+        {
+          "visibility": "hidden",
+          "behavior": "inset-swipe"
+        }
+      ],
+      "expo-font",
+      "expo-asset"
+    ],
+    "extra": {
+      "expo-navigation-bar": {
+        "visibility": "hidden",
+        "behavior": "inset-swipe"
+      },
+      "eas": {
+        "projectId": "23e42025-9765-459f-8c57-3be5dd48ec2d"
+      }
+    }
+  }
+}
