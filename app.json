@@ -2,7 +2,6 @@
   "expo": {
     "name": "Saját Music",
     "slug": "sajat-music",
-    "owner": "omoneko75s-team",
     "newArchEnabled": false,
     "version": "1.0.0",
     "orientation": "portrait",
@@ -61,7 +60,7 @@
         "behavior": "inset-swipe"
       },
       "eas": {
-        "projectId": "23e42025-9765-459f-8c57-3be5dd48ec2d"
+        
       }
     }
   }
