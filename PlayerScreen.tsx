@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, TextInput, FlatList } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,38 +13,23 @@ interface PlayerScreenProps {
 export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const { currentSong, isPlaying, queue, playSong, togglePlayPause, seekTo, skipNext, skipPrevious } = useAudio();
   
-  const progress = useProgress(500);
+  // Nincs erőszakos 500ms-es frissítés, hagyjuk az alapértelmezett normál tempót
+  const progress = useProgress();
   
+  // Csak két állapot kell: húzzák-e éppen, és hol tart a húzás
   const [isSeeking, setIsSeeking] = useState(false);
-  const [dragTime, setDragTime] = useState(0); 
-  const [lockedPos, setLockedPos] = useState(0); 
-  const [sliderKey, setSliderKey] = useState(0); 
+  const [seekValue, setSeekValue] = useState(0);
   
   const [showQueue, setShowQueue] = useState(false);
   const [queueSearch, setQueueSearch] = useState('');
 
-  const lastPosRef = useRef(0);
+  if (!currentSong) return null;
 
   const position = progress.position ?? 0;
   const duration = Math.max(progress.duration || 1, position, 1);
 
-  // Amikor NEM húzod, a valós pozíciót adjuk át. Amikor HÚZOD, lefagyasztjuk a kezdőértéket,
-  // így az Android nem szakítja meg az érintést a setProgress()-el!
-  const sliderValue = isSeeking ? lockedPos : position;
-  const displayTime = isSeeking ? dragTime : position;
-
-  // Ugrás érzékelő az értesítési sávos húzáshoz
-  useEffect(() => {
-    if (!isSeeking) {
-      const diff = Math.abs(position - lastPosRef.current);
-      if (diff > 3) {
-        setSliderKey(k => k + 1);
-      }
-      lastPosRef.current = position;
-    }
-  }, [position, isSeeking]);
-
-  if (!currentSong) return null;
+  // EZ AZ ANDROIDOS TITOK: Ha húzod, a te értékedet mutatja. Ha nem, a lejátszóét. Nincs több szinkronizációs trükk!
+  const currentSliderValue = isSeeking ? seekValue : position;
 
   const formatTime = (seconds: number) => {
     if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) return '0:00 ';
@@ -54,15 +39,6 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   };
 
   const filteredQueue = queue.filter(s => s.title.toLowerCase().includes(queueSearch.toLowerCase()));
-
-  // AZONNALI ÉRINTÉS ELKAPÓ: Abban a pillanatban zárolja a csúszkát, hogy hozzáérsz
-  const handleTouchStart = () => {
-    if (!isSeeking) {
-      setIsSeeking(true);
-      setLockedPos(position);
-      setDragTime(position);
-    }
-  };
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
@@ -89,37 +65,33 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
         </View>
 
         <View style={styles.bottomControls}>
-          {/* onTouchStart elkapja az érintést még a Slider előtt */}
-          <View style={styles.progressContainer} onTouchStart={handleTouchStart}>
+          <View style={styles.progressContainer}>
             <Slider
-              key={`slider-${currentSong.id}-${sliderKey}`}
               style={styles.slider}
-              value={sliderValue}
+              value={currentSliderValue}
               minimumValue={0}
               maximumValue={duration}
               minimumTrackTintColor="#8A2BE2"
               maximumTrackTintColor="#333333"
               thumbTintColor="#8A2BE2"
               onSlidingStart={(val) => {
+                // Amint hozzáérsz, elvesszük a lejátszótól a kontrollt
                 setIsSeeking(true);
-                setLockedPos(val);
-                setDragTime(val);
+                setSeekValue(val);
               }}
               onValueChange={(val) => {
-                // Csak a kiírt időt frissítjük húzás közben!
-                setDragTime(val); 
+                // Húzás közben csak vizuálisan frissítjük a számokat és a csúszkát
+                setSeekValue(val);
               }}
               onSlidingComplete={async (val) => {
-                setDragTime(val);
+                // Elengedéskor ugrunk
                 await seekTo(val);
-                setTimeout(() => {
-                  setIsSeeking(false);
-                  lastPosRef.current = val;
-                }, 600);
+                // Visszaadjuk a kontrollt a lejátszónak
+                setTimeout(() => setIsSeeking(false), 200);
               }}
             />
             <View style={styles.timeRow}>
-              <Text style={styles.timeText}>{formatTime(displayTime)}</Text>
+              <Text style={styles.timeText}>{formatTime(currentSliderValue)}</Text>
               <Text style={styles.timeText}>{formatTime(duration)}</Text>
             </View>
           </View>
@@ -145,6 +117,7 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
           </View>
         </View>
 
+        {/* ... (A Queue kódja változatlan) ... */}
         {showQueue && (
           <View style={styles.queueSidebar}>
             <View style={styles.queueTopRow}>
@@ -202,12 +175,7 @@ const styles = StyleSheet.create({
   progressContainer: { width: '100%', marginBottom: 20, paddingVertical: 10 },
   slider: { width: '100%', height: 40 },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5 },
-  timeText: { 
-    color: '#8E8E93', 
-    fontSize: 12,
-    fontVariant: ['tabular-nums'],
-    minWidth: 45,
-  },
+  timeText: { color: '#8E8E93', fontSize: 12, fontVariant: ['tabular-nums'], minWidth: 45 },
   controlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 10 },
   controlBtn: { backgroundColor: '#000000', width: 44, height: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 22 },
   playButton: { backgroundColor: '#000000', width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#8A2BE2' },
