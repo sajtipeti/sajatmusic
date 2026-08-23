@@ -12,6 +12,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AudioProvider, useAudio, Song } from './AudioContext';
 import { scanPlaylistsFolder, PlaylistFolder } from './fileScanner';
 import PlayerScreen from './PlayerScreen';
@@ -316,9 +317,11 @@ function MainApp() {
 
 export default function App() {
   return (
-    <AudioProvider>
-      <MainApp />
-    </AudioProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AudioProvider>
+        <MainApp />
+      </AudioProvider>
+    </GestureHandlerRootView>
   );
 }
 

@@ -21,6 +21,9 @@
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-awesome-slider": "^2.9.0",
+    "react-native-gesture-handler": "~2.28.0",
+    "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-track-player": "^5.0.0-alpha0-nightly-359af5a12d712d3b685530aed9b9625865a25d74"
   },

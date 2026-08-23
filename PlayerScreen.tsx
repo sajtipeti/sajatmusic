@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, TextInput, FlatList } from 'react-native';
-import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from './AudioContext';
 import { useProgress } from 'react-native-track-player';
+
+// Új importok a golyóálló csúszkához
+import { useSharedValue } from 'react-native-reanimated';
+import { Slider } from 'react-native-awesome-slider';
 
 interface PlayerScreenProps {
   visible: boolean;
@@ -16,23 +19,32 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const progress = useProgress(1000);
   
   const [isSeeking, setIsSeeking] = useState(false);
-  const [sliderValue, setSliderValue] = useState(0);
+  const [sliderRenderValue, setSliderRenderValue] = useState(0);
   
   const [showQueue, setShowQueue] = useState(false);
   const [queueSearch, setQueueSearch] = useState('');
 
-  const position = progress.position ?? 0;
-  const duration = Math.max(progress.duration || 1, position, 1);
+  // Reanimated Shared Values az Awesome Slidernek
+  const progressValue = useSharedValue(0);
+  const min = useSharedValue(0);
+  const max = useSharedValue(1);
 
+  const duration = Math.max(progress.duration || 1, 1);
+
+  // Szinkronizáljuk a TrackPlayer pozícióját a Reanimated csúszkával
   useEffect(() => {
+    max.value = duration;
     if (!isSeeking) {
-      setSliderValue(position);
+      progressValue.value = progress.position;
+      setSliderRenderValue(progress.position);
     }
-  }, [position, isSeeking]);
+  }, [progress.position, duration, isSeeking]);
 
+  // Alaphelyzetbe állítás új dal esetén
   useEffect(() => {
     setIsSeeking(false);
-    setSliderValue(0);
+    progressValue.value = 0;
+    setSliderRenderValue(0);
   }, [currentSong?.id]);
 
   if (!currentSong) return null;
@@ -56,37 +68,37 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.artworkContainer}>
-          {currentSong.artwork && currentSong.artwork.length > 5 ? (
-            <Image source={{ uri: currentSong.artwork }} style={styles.artwork} />
-          ) : (
-            <View style={styles.placeholderArtwork}>
-              <Ionicons name="musical-notes" size={80} color="#8A2BE2" />
-            </View>
-          )}
+        {/* Térkitöltő konténer, ami középre tolja a borítót és nem engedi összecsúszni a képernyőt */}
+        <View style={styles.middleSection}>
+          <View style={styles.artworkContainer}>
+            {currentSong.artwork && currentSong.artwork.length > 5 ? (
+              <Image source={{ uri: currentSong.artwork }} style={styles.artwork} />
+            ) : (
+              <View style={styles.placeholderArtwork}>
+                <Ionicons name="musical-notes" size={80} color="#8A2BE2" />
+              </View>
+            )}
+          </View>
         </View>
 
         <View style={styles.infoContainer}>
           <Text style={styles.title} numberOfLines={2}>{currentSong.title}</Text>
         </View>
 
-        {/* Nincs flex háló, fix méretekkel biztosítjuk, hogy az Android érintse a csúszkát */}
         <View style={styles.bottomControls}>
           <View style={styles.progressContainer}>
+            
+            {/* Az Új Awesome Slider */}
             <Slider
-              key={currentSong?.id || 'slider'}
               style={styles.slider}
-              value={sliderValue}
-              minimumValue={0}
-              maximumValue={duration}
-              minimumTrackTintColor="#8A2BE2"
-              maximumTrackTintColor="#333333"
-              thumbTintColor="#8A2BE2"
+              progress={progressValue}
+              minimumValue={min}
+              maximumValue={max}
               onSlidingStart={() => {
                 setIsSeeking(true);
               }}
               onValueChange={(val) => {
-                setSliderValue(val);
+                setSliderRenderValue(val); // Hogy a szöveg is frissüljön húzás közben
               }}
               onSlidingComplete={async (val) => {
                 try {
@@ -96,11 +108,19 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
                 }
                 setTimeout(() => {
                   setIsSeeking(false);
-                }, 300);
+                }, 100);
+              }}
+              theme={{
+                disableMinTrackTintColor: '#8A2BE2',
+                maximumTrackTintColor: '#333333',
+                minimumTrackTintColor: '#8A2BE2',
+                cacheTrackTintColor: '#333333',
+                bubbleBackgroundColor: '#8A2BE2',
               }}
             />
+
             <View style={styles.timeRow}>
-              <Text style={styles.timeText}>{formatTime(sliderValue)}</Text>
+              <Text style={styles.timeText}>{formatTime(sliderRenderValue)}</Text>
               <Text style={styles.timeText}>{formatTime(duration)}</Text>
             </View>
           </View>
@@ -174,20 +194,21 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000000', paddingHorizontal: 24, paddingTop: 50, paddingBottom: 40 },
   headerRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10 },
   iconBtn: { padding: 5 },
-  artworkContainer: { alignItems: 'center', justifyContent: 'center', marginVertical: 10, height: 280 }, // Nincs flex: 1, fix magasság az ütközések elkerülésére!
-  artwork: { width: 280, height: 280, borderRadius: 20 },
-  placeholderArtwork: { width: 280, height: 280, borderRadius: 20, backgroundColor: '#000000', borderWidth: 2, borderColor: '#8A2BE2', justifyContent: 'center', alignItems: 'center' },
-  infoContainer: { alignItems: 'center', paddingHorizontal: 10, marginVertical: 15 },
-  title: { color: '#C084FC', fontSize: 22, fontWeight: 'bold', textAlign: 'center' },
-  bottomControls: { width: '100%' },
-  progressContainer: { width: '100%', marginBottom: 20, paddingVertical: 10, height: 80 }, // Fix magasság biztosítja az Android touch fókuszát
-  slider: { width: '100%', height: 40 },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5 },
-  timeText: { color: '#8E8E93', fontSize: 12, fontVariant: ['tabular-nums'], minWidth: 45 },
+  middleSection: { flex: 1, justifyContent: 'center', alignItems: 'center' }, // Ez tartja középen a borítót!
+  artworkContainer: { width: 300, height: 300, alignItems: 'center', justifyContent: 'center' },
+  artwork: { width: 300, height: 300, borderRadius: 20 },
+  placeholderArtwork: { width: 300, height: 300, borderRadius: 20, backgroundColor: '#000000', borderWidth: 2, borderColor: '#8A2BE2', justifyContent: 'center', alignItems: 'center' },
+  infoContainer: { alignItems: 'center', paddingHorizontal: 10, marginBottom: 30 },
+  title: { color: '#C084FC', fontSize: 24, fontWeight: 'bold', textAlign: 'center' },
+  bottomControls: { width: '100%', paddingBottom: 20 },
+  progressContainer: { width: '100%', marginBottom: 30 },
+  slider: { width: '100%', height: 40, marginVertical: 10 },
+  timeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5, marginTop: -10 },
+  timeText: { color: '#8E8E93', fontSize: 13, fontVariant: ['tabular-nums'], minWidth: 45 },
   controlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 10 },
   controlBtn: { backgroundColor: '#000000', width: 44, height: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 22 },
-  playButton: { backgroundColor: '#000000', width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#8A2BE2' },
-  queueSidebar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '50%', backgroundColor: '#000000', borderRightWidth: 2, borderColor: '#8A2BE2', paddingTop: 50, paddingHorizontal: 10, zIndex: 20 },
+  playButton: { backgroundColor: '#000000', width: 76, height: 76, borderRadius: 38, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#8A2BE2' },
+  queueSidebar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '60%', backgroundColor: '#000000', borderRightWidth: 2, borderColor: '#8A2BE2', paddingTop: 50, paddingHorizontal: 10, zIndex: 20 },
   queueTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   queueSearchWrapper: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 8, height: 40, borderWidth: 1, borderColor: '#8A2BE2' },
   queueSearchInput: { flex: 1, color: '#FFFFFF', fontSize: 14 },
