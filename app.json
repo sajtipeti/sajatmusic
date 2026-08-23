@@ -24,7 +24,10 @@
         "WRITE_EXTERNAL_STORAGE",
         "MODIFY_AUDIO_SETTINGS",
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET"
       ],
       "package": "com.omonekosteam.SajatMusic"
     },
@@ -60,7 +63,7 @@
         "behavior": "inset-swipe"
       },
       "eas": {
-        
+        "projectId": "88c1cdde-7d52-4ad8-8e23-102cf84bcc8c"
       }
     }
   }

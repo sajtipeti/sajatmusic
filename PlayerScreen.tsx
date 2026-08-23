@@ -12,40 +12,34 @@ interface PlayerScreenProps {
 
 export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const { currentSong, isPlaying, queue, playSong, togglePlayPause, seekTo, skipNext, skipPrevious } = useAudio();
-  const progress = useProgress();
+  
+  // FIX 1: Fél másodpercenként (500ms) kikényszerítjük a frissítést, így sosem fagy le!
+  const progress = useProgress(500);
   
   const [isSeeking, setIsSeeking] = useState(false);
-  const [dragTime, setDragTime] = useState(0);
-  const [localPos, setLocalPos] = useState(0);
+  const [sliderValue, setSliderValue] = useState(0); // Ezt az egy értéket fogjuk használni
   
   const [showQueue, setShowQueue] = useState(false);
   const [queueSearch, setQueueSearch] = useState('');
 
-  // Biztosítjuk, hogy a maximumValue sosem legyen kisebb a valós pozíciónál
   const position = progress.position ?? 0;
   const duration = Math.max(progress.duration || 1, position, 1);
 
-  // Csak akkor frissítjük a lejátszó csúszkáját, ha ÉPP NEM húzod
+  // SZINKRONIZÁLÁS: Csak akkor követi a zenét, ha ÉPP NEM fogod a csúszkát
   useEffect(() => {
     if (!isSeeking) {
-      setLocalPos(position);
+      setSliderValue(position);
     }
   }, [position, isSeeking]);
 
   if (!currentSong) return null;
 
-  // Húzás közben a húzott időt mutatjuk, amúgy a valósat
-  const timeToDisplay = isSeeking ? dragTime : localPos;
-
-  // Betonbiztos időformázó, ami sosem ad vissza 1:0-t
   const formatTime = (seconds: number) => {
-    if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) return '0:00';
+    if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) return '0:00 ';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    const formattedSecs = secs < 10 ? `0${secs}` : `${secs}`;
-    
-    // TRÜKK: Egy extra szóköz a végén!
-    return `${mins}:${formattedSecs} `;
+    // A jól bevált, levágás elleni szóközös módszer
+    return `${mins}:${secs.toString().padStart(2, '0')} `;
   };
 
   const filteredQueue = queue.filter(s => s.title.toLowerCase().includes(queueSearch.toLowerCase()));
@@ -78,8 +72,7 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
           <View style={styles.progressContainer}>
             <Slider
               style={styles.slider}
-              // FIGYELEM: A value direkt nem változik húzás közben, így Androidon nem akad ki az érintés!
-              value={localPos}
+              value={sliderValue}
               minimumValue={0}
               maximumValue={duration}
               minimumTrackTintColor="#8A2BE2"
@@ -87,21 +80,23 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
               thumbTintColor="#8A2BE2"
               onSlidingStart={(val) => {
                 setIsSeeking(true);
-                setDragTime(val);
+                setSliderValue(val);
               }}
               onValueChange={(val) => {
-                // Csak a szöveges számlálót frissítjük húzás közben
-                setDragTime(val);
+                // FIX 2: Húzás közben végre TÉNYLEG frissítjük a csúszka értékét, így húzható lesz!
+                setSliderValue(val); 
               }}
               onSlidingComplete={async (val) => {
+                setSliderValue(val);
                 await seekTo(val);
+                // 300ms szünetet hagyunk a TrackPlayernek a pörgetésre, mielőtt visszakapcsoljuk az autokövetést
                 setTimeout(() => {
                   setIsSeeking(false);
                 }, 300);
               }}
             />
             <View style={styles.timeRow}>
-              <Text style={styles.timeText}>{formatTime(timeToDisplay)}</Text>
+              <Text style={styles.timeText}>{formatTime(sliderValue)}</Text>
               <Text style={styles.timeText}>{formatTime(duration)}</Text>
             </View>
           </View>
