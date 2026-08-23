@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, TextInput, FlatList } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,7 +13,6 @@ interface PlayerScreenProps {
 export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const { currentSong, isPlaying, queue, playSong, togglePlayPause, skipNext, skipPrevious, seekTo } = useAudio();
   
-  // Ritkítottuk a progress lekérdezést 1000ms-re, hogy ne terhelje túl az Android natív szálát
   const progress = useProgress(1000);
   
   const [isSeeking, setIsSeeking] = useState(false);
@@ -25,7 +24,6 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const position = progress.position ?? 0;
   const duration = Math.max(progress.duration || 1, position, 1);
 
-  // Dalváltáskor vagy ha külsőleg (pl. értesítési sávból) változik, szinkronizáljuk
   useEffect(() => {
     if (!isSeeking) {
       setSliderValue(position);
@@ -63,7 +61,7 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
             <Image source={{ uri: currentSong.artwork }} style={styles.artwork} />
           ) : (
             <View style={styles.placeholderArtwork}>
-              <Ionicons name="musical-notes" size5={80} color="#8A2BE2" />
+              <Ionicons name="musical-notes" size={80} color="#8A2BE2" />
             </View>
           )}
         </View>
@@ -72,11 +70,11 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
           <Text style={styles.title} numberOfLines={2}>{currentSong.title}</Text>
         </View>
 
+        {/* Nincs flex háló, fix méretekkel biztosítjuk, hogy az Android érintse a csúszkát */}
         <View style={styles.bottomControls}>
-          {/* Fix méretű konténer, hogy az Android ne nyelje el a touch eseményeket */}
           <View style={styles.progressContainer}>
             <Slider
-              key={currentSong.id}
+              key={currentSong?.id || 'slider'}
               style={styles.slider}
               value={sliderValue}
               minimumValue={0}
@@ -174,15 +172,15 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000000', paddingHorizontal: 24, paddingTop: 50, paddingBottom: 40 },
-  headerRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10, zIndex: 10 },
+  headerRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10 },
   iconBtn: { padding: 5 },
-  artworkContainer: { alignItems: 'center', justifyContent: 'center', marginVertical: 20, flex: 1 },
+  artworkContainer: { alignItems: 'center', justifyContent: 'center', marginVertical: 10, height: 280 }, // Nincs flex: 1, fix magasság az ütközések elkerülésére!
   artwork: { width: 280, height: 280, borderRadius: 20 },
   placeholderArtwork: { width: 280, height: 280, borderRadius: 20, backgroundColor: '#000000', borderWidth: 2, borderColor: '#8A2BE2', justifyContent: 'center', alignItems: 'center' },
-  infoContainer: { alignItems: 'center', paddingHorizontal: 10, marginBottom: 30 },
+  infoContainer: { alignItems: 'center', paddingHorizontal: 10, marginVertical: 15 },
   title: { color: '#C084FC', fontSize: 22, fontWeight: 'bold', textAlign: 'center' },
   bottomControls: { width: '100%' },
-  progressContainer: { width: '100%', marginBottom: 20, paddingVertical: 10 },
+  progressContainer: { width: '100%', marginBottom: 20, paddingVertical: 10, height: 80 }, // Fix magasság biztosítja az Android touch fókuszát
   slider: { width: '100%', height: 40 },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5 },
   timeText: { color: '#8E8E93', fontSize: 12, fontVariant: ['tabular-nums'], minWidth: 45 },
