@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, TextInput, FlatList } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,13 +11,12 @@ interface PlayerScreenProps {
 }
 
 export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
-  const { currentSong, isPlaying, queue, playSong, togglePlayPause, seekTo, skipNext, skipPrevious } = useAudio();
+  const { currentSong, isPlaying, queue, playSong, togglePlayPause, skipNext, skipPrevious, seekTo } = useAudio();
   
-  // A TrackPlayer hivatalos progress hook-ja
-  const progress = useProgress(200);
+  // Ritkítottuk a progress lekérdezést 1000ms-re, hogy ne terhelje túl az Android natív szálát
+  const progress = useProgress(1000);
   
-  // Lokális state-ek a közösségi minta alapján
-  const [isDragging, setIsDragging] = useState(false);
+  const [isSeeking, setIsSeeking] = useState(false);
   const [sliderValue, setSliderValue] = useState(0);
   
   const [showQueue, setShowQueue] = useState(false);
@@ -26,12 +25,15 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const position = progress.position ?? 0;
   const duration = Math.max(progress.duration || 1, position, 1);
 
-  // Ha nem húzzuk, a zene pozícióját mutatjuk. Ha húzzuk, a saját sliderValue-nkat.
-  const displayValue = isDragging ? sliderValue : position;
-
-  // Dalváltáskor tiszta lapot nyitunk, megszüntetünk mindenféle beragadt húzási állapotot
+  // Dalváltáskor vagy ha külsőleg (pl. értesítési sávból) változik, szinkronizáljuk
   useEffect(() => {
-    setIsDragging(false);
+    if (!isSeeking) {
+      setSliderValue(position);
+    }
+  }, [position, isSeeking]);
+
+  useEffect(() => {
+    setIsSeeking(false);
     setSliderValue(0);
   }, [currentSong?.id]);
 
@@ -61,7 +63,7 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
             <Image source={{ uri: currentSong.artwork }} style={styles.artwork} />
           ) : (
             <View style={styles.placeholderArtwork}>
-              <Ionicons name="musical-notes" size={80} color="#8A2BE2" />
+              <Ionicons name="musical-notes" size5={80} color="#8A2BE2" />
             </View>
           )}
         </View>
@@ -71,24 +73,21 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
         </View>
 
         <View style={styles.bottomControls}>
+          {/* Fix méretű konténer, hogy az Android ne nyelje el a touch eseményeket */}
           <View style={styles.progressContainer}>
             <Slider
-              // Kulcsfontosságú: a key={currentSong.id} garantálja, hogy dalváltáskor 
-              // az Android teljesen újjáépítse a csúszkát, így sosem ragadhat be!
-              key={`slider-${currentSong.id}`}
+              key={currentSong.id}
               style={styles.slider}
-              value={displayValue}
+              value={sliderValue}
               minimumValue={0}
               maximumValue={duration}
               minimumTrackTintColor="#8A2BE2"
               maximumTrackTintColor="#333333"
               thumbTintColor="#8A2BE2"
-              onSlidingStart={(val) => {
-                setIsDragging(true);
-                setSliderValue(val);
+              onSlidingStart={() => {
+                setIsSeeking(true);
               }}
               onValueChange={(val) => {
-                if (!isDragging) setIsDragging(true);
                 setSliderValue(val);
               }}
               onSlidingComplete={async (val) => {
@@ -97,15 +96,13 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
                 } catch (e) {
                   console.log('Seek error:', e);
                 }
-                // Rövid késleltetés, hogy a TrackPlayer biztosan feldolgozza az ugrást,
-                // mielőtt a háttérből jövő pozíció újra átvenné az irányítást.
                 setTimeout(() => {
-                  setIsDragging(false);
-                }, 400);
+                  setIsSeeking(false);
+                }, 300);
               }}
             />
             <View style={styles.timeRow}>
-              <Text style={styles.timeText}>{formatTime(displayValue)}</Text>
+              <Text style={styles.timeText}>{formatTime(sliderValue)}</Text>
               <Text style={styles.timeText}>{formatTime(duration)}</Text>
             </View>
           </View>
