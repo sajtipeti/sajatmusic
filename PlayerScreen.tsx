@@ -4,8 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from './AudioContext';
 import { useProgress } from 'react-native-track-player';
 
-// Új importok a golyóálló csúszkához
-import { useSharedValue } from 'react-native-reanimated';
+// Figyeld meg a runOnJS importját!
+import { useSharedValue, runOnJS } from 'react-native-reanimated';
 import { Slider } from 'react-native-awesome-slider';
 
 interface PlayerScreenProps {
@@ -24,14 +24,12 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const [showQueue, setShowQueue] = useState(false);
   const [queueSearch, setQueueSearch] = useState('');
 
-  // Reanimated Shared Values az Awesome Slidernek
   const progressValue = useSharedValue(0);
   const min = useSharedValue(0);
   const max = useSharedValue(1);
 
   const duration = Math.max(progress.duration || 1, 1);
 
-  // Szinkronizáljuk a TrackPlayer pozícióját a Reanimated csúszkával
   useEffect(() => {
     max.value = duration;
     if (!isSeeking) {
@@ -40,7 +38,6 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
     }
   }, [progress.position, duration, isSeeking]);
 
-  // Alaphelyzetbe állítás új dal esetén
   useEffect(() => {
     setIsSeeking(false);
     progressValue.value = 0;
@@ -58,6 +55,24 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
 
   const filteredQueue = queue.filter(s => s.title.toLowerCase().includes(queueSearch.toLowerCase()));
 
+  // ---- Biztonságos JS függvények a Workletekhez ----
+  const handleSlidingStart = () => {
+    setIsSeeking(true);
+  };
+
+  const handleValueChange = (val: number) => {
+    setSliderRenderValue(val);
+  };
+
+  const handleSlidingComplete = (val: number) => {
+    seekTo(val).then(() => {
+      setTimeout(() => {
+        setIsSeeking(false);
+      }, 100);
+    }).catch(e => console.log('Seek error:', e));
+  };
+  // ---------------------------------------------------
+
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
       <View style={styles.container}>
@@ -68,7 +83,6 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
           </TouchableOpacity>
         </View>
 
-        {/* Térkitöltő konténer, ami középre tolja a borítót és nem engedi összecsúszni a képernyőt */}
         <View style={styles.middleSection}>
           <View style={styles.artworkContainer}>
             {currentSong.artwork && currentSong.artwork.length > 5 ? (
@@ -88,27 +102,20 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
         <View style={styles.bottomControls}>
           <View style={styles.progressContainer}>
             
-            {/* Az Új Awesome Slider */}
             <Slider
               style={styles.slider}
               progress={progressValue}
               minimumValue={min}
               maximumValue={max}
+              // Itt történik a varázslat: runOnJS használata!
               onSlidingStart={() => {
-                setIsSeeking(true);
+                runOnJS(handleSlidingStart)();
               }}
               onValueChange={(val) => {
-                setSliderRenderValue(val); // Hogy a szöveg is frissüljön húzás közben
+                runOnJS(handleValueChange)(val);
               }}
-              onSlidingComplete={async (val) => {
-                try {
-                  await seekTo(val);
-                } catch (e) {
-                  console.log('Seek error:', e);
-                }
-                setTimeout(() => {
-                  setIsSeeking(false);
-                }, 100);
+              onSlidingComplete={(val) => {
+                runOnJS(handleSlidingComplete)(val);
               }}
               theme={{
                 disableMinTrackTintColor: '#8A2BE2',
@@ -194,7 +201,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000000', paddingHorizontal: 24, paddingTop: 50, paddingBottom: 40 },
   headerRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10 },
   iconBtn: { padding: 5 },
-  middleSection: { flex: 1, justifyContent: 'center', alignItems: 'center' }, // Ez tartja középen a borítót!
+  middleSection: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   artworkContainer: { width: 300, height: 300, alignItems: 'center', justifyContent: 'center' },
   artwork: { width: 300, height: 300, borderRadius: 20 },
   placeholderArtwork: { width: 300, height: 300, borderRadius: 20, backgroundColor: '#000000', borderWidth: 2, borderColor: '#8A2BE2', justifyContent: 'center', alignItems: 'center' },
