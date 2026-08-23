@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, TextInput, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, TextInput, FlatList, AppState } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from './AudioContext';
@@ -13,11 +13,12 @@ interface PlayerScreenProps {
 export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const { currentSong, isPlaying, queue, playSong, togglePlayPause, seekTo, skipNext, skipPrevious } = useAudio();
   
-  // FIX 1: Fél másodpercenként (500ms) kikényszerítjük a frissítést, így sosem fagy le!
   const progress = useProgress(500);
   
   const [isSeeking, setIsSeeking] = useState(false);
-  const [sliderValue, setSliderValue] = useState(0); // Ezt az egy értéket fogjuk használni
+  const [sliderValue, setSliderValue] = useState(0); // A vizuális csúszka pozíciója
+  const [displayTime, setDisplayTime] = useState(0); // A kiírt számok pozíciója
+  const [sliderKey, setSliderKey] = useState(0); // Az "ébresztő" kulcs a beragadás ellen
   
   const [showQueue, setShowQueue] = useState(false);
   const [queueSearch, setQueueSearch] = useState('');
@@ -25,10 +26,22 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const position = progress.position ?? 0;
   const duration = Math.max(progress.duration || 1, position, 1);
 
-  // SZINKRONIZÁLÁS: Csak akkor követi a zenét, ha ÉPP NEM fogod a csúszkát
+  // 1. ÉBRESZTŐ FUNKCIÓ: Figyeli, ha visszajössz az appba, és frissíti a csúszkát
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active') {
+        // Amint fókuszba kerül az app, kap egy új kulcsot, amitől kénytelen a helyére ugrani
+        setSliderKey(prev => prev + 1);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // 2. SZINKRONIZÁLÁS: Csak akkor követi a zenét, ha ÉPP NEM fogod a csúszkát
   useEffect(() => {
     if (!isSeeking) {
       setSliderValue(position);
+      setDisplayTime(position);
     }
   }, [position, isSeeking]);
 
@@ -38,7 +51,6 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
     if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) return '0:00 ';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    // A jól bevált, levágás elleni szóközös módszer
     return `${mins}:${secs.toString().padStart(2, '0')} `;
   };
 
@@ -71,8 +83,9 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
         <View style={styles.bottomControls}>
           <View style={styles.progressContainer}>
             <Slider
+              key={`slider-${sliderKey}`} // Ide jön az ébresztő kulcs
               style={styles.slider}
-              value={sliderValue}
+              value={sliderValue} // Ez nem változik húzás közben!
               minimumValue={0}
               maximumValue={duration}
               minimumTrackTintColor="#8A2BE2"
@@ -80,23 +93,24 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
               thumbTintColor="#8A2BE2"
               onSlidingStart={(val) => {
                 setIsSeeking(true);
-                setSliderValue(val);
+                setDisplayTime(val);
               }}
               onValueChange={(val) => {
-                // FIX 2: Húzás közben végre TÉNYLEG frissítjük a csúszka értékét, így húzható lesz!
-                setSliderValue(val); 
+                // FIX: Csak a SZÖVEG változik húzás közben, a csúszkát az Android intézi!
+                // Így nem szakad meg az érintés, és szabadon húzogathatod.
+                setDisplayTime(val); 
               }}
               onSlidingComplete={async (val) => {
-                setSliderValue(val);
+                setDisplayTime(val);
                 await seekTo(val);
-                // 300ms szünetet hagyunk a TrackPlayernek a pörgetésre, mielőtt visszakapcsoljuk az autokövetést
+                // Hagyunk egy kis időt a TrackPlayernek az ugrásra, mielőtt az autokövetés visszakapcsol
                 setTimeout(() => {
                   setIsSeeking(false);
                 }, 300);
               }}
             />
             <View style={styles.timeRow}>
-              <Text style={styles.timeText}>{formatTime(sliderValue)}</Text>
+              <Text style={styles.timeText}>{formatTime(displayTime)}</Text>
               <Text style={styles.timeText}>{formatTime(duration)}</Text>
             </View>
           </View>
