@@ -16,29 +16,29 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const progress = useProgress(500);
   
   const [isSeeking, setIsSeeking] = useState(false);
-  const [seekPos, setSeekPos] = useState(0); 
+  const [dragTime, setDragTime] = useState(0); 
+  const [lockedPos, setLockedPos] = useState(0); 
   const [sliderKey, setSliderKey] = useState(0); 
   
   const [showQueue, setShowQueue] = useState(false);
   const [queueSearch, setQueueSearch] = useState('');
 
-  // Ez jegyzi meg a legutolsó pozíciót az ugrás-érzékelőhöz
   const lastPosRef = useRef(0);
 
   const position = progress.position ?? 0;
   const duration = Math.max(progress.duration || 1, position, 1);
 
-  // Ezt az egy értéket használja a csúszka és a szöveg is.
-  // Ha épp húzod, akkor az ujjadat követi (seekPos), ha nem, akkor a zenét (position)
-  const currentDisplayTime = isSeeking ? seekPos : position;
+  // Amikor NEM húzod, a valós pozíciót adjuk át. Amikor HÚZOD, lefagyasztjuk a kezdőértéket,
+  // így az Android nem szakítja meg az érintést a setProgress()-el!
+  const sliderValue = isSeeking ? lockedPos : position;
+  const displayTime = isSeeking ? dragTime : position;
 
-  // UGRÁS ÉRZÉKELŐ (Értesítési sávból húzás elleni védelem)
+  // Ugrás érzékelő az értesítési sávos húzáshoz
   useEffect(() => {
     if (!isSeeking) {
       const diff = Math.abs(position - lastPosRef.current);
-      // Ha 3 másodpercnél nagyobbat ugrott hirtelen az idő (tehát értesítésből húztad)
       if (diff > 3) {
-        setSliderKey(k => k + 1); // Sokkoljuk a Slidert, hogy frissüljön vizuálisan is
+        setSliderKey(k => k + 1);
       }
       lastPosRef.current = position;
     }
@@ -54,6 +54,15 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   };
 
   const filteredQueue = queue.filter(s => s.title.toLowerCase().includes(queueSearch.toLowerCase()));
+
+  // AZONNALI ÉRINTÉS ELKAPÓ: Abban a pillanatban zárolja a csúszkát, hogy hozzáérsz
+  const handleTouchStart = () => {
+    if (!isSeeking) {
+      setIsSeeking(true);
+      setLockedPos(position);
+      setDragTime(position);
+    }
+  };
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
@@ -80,12 +89,12 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
         </View>
 
         <View style={styles.bottomControls}>
-          <View style={styles.progressContainer}>
+          {/* onTouchStart elkapja az érintést még a Slider előtt */}
+          <View style={styles.progressContainer} onTouchStart={handleTouchStart}>
             <Slider
-              // A key kikényszeríti az újra-renderelést, ha kintről húztad meg a csúszkát
               key={`slider-${currentSong.id}-${sliderKey}`}
               style={styles.slider}
-              value={currentDisplayTime}
+              value={sliderValue}
               minimumValue={0}
               maximumValue={duration}
               minimumTrackTintColor="#8A2BE2"
@@ -93,25 +102,24 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
               thumbTintColor="#8A2BE2"
               onSlidingStart={(val) => {
                 setIsSeeking(true);
-                setSeekPos(val);
+                setLockedPos(val);
+                setDragTime(val);
               }}
               onValueChange={(val) => {
-                // Biztosíték arra, hogy ha az onSlidingStart nem futna le, akkor is átvegye az irányítást
-                if (!isSeeking) setIsSeeking(true); 
-                setSeekPos(val); 
+                // Csak a kiírt időt frissítjük húzás közben!
+                setDragTime(val); 
               }}
               onSlidingComplete={async (val) => {
-                setSeekPos(val);
-                await seekTo(val); // Odaugrik a zene
-                // 800ms-t adunk az Androidnak, hogy a zene tényleg odatekerjen, mielőtt visszakapcsoljuk az autokövetést
+                setDragTime(val);
+                await seekTo(val);
                 setTimeout(() => {
                   setIsSeeking(false);
-                  lastPosRef.current = val; // Ne higgye azt, hogy külső ugrás történt
-                }, 800);
+                  lastPosRef.current = val;
+                }, 600);
               }}
             />
             <View style={styles.timeRow}>
-              <Text style={styles.timeText}>{formatTime(currentDisplayTime)}</Text>
+              <Text style={styles.timeText}>{formatTime(displayTime)}</Text>
               <Text style={styles.timeText}>{formatTime(duration)}</Text>
             </View>
           </View>
@@ -191,7 +199,7 @@ const styles = StyleSheet.create({
   infoContainer: { alignItems: 'center', paddingHorizontal: 10, marginBottom: 30 },
   title: { color: '#C084FC', fontSize: 22, fontWeight: 'bold', textAlign: 'center' },
   bottomControls: { width: '100%' },
-  progressContainer: { width: '100%', marginBottom: 20 },
+  progressContainer: { width: '100%', marginBottom: 20, paddingVertical: 10 },
   slider: { width: '100%', height: 40 },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5 },
   timeText: { 
