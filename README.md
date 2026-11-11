@@ -14,7 +14,7 @@ Egy saját fejlesztésű, Androidra optimalizált zenelejátszó alkalmazás, am
 
 Az alkalmazás az **Android MediaStore** rendszerén keresztül olvassa be a zenéket. Mivel az Android 11+ szigorú biztonsági szabályai (Scoped Storage) nem engedik, hogy az app automatikusan mappákat hozzon létre a nyilvános tárhelyen, a zenék helyes beolvasásához a felhasználónak manuálisan kell létrehoznia a következő mappastruktúrát a telefon belső tárhelyén:
 
-```text
+
 /storage/emulated/0/Music/AppRootFolder/Playlists/
 
 
