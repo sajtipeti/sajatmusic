@@ -1,20 +1,22 @@
 {
   "expo": {
+    "owner": "omoneko75",
     "name": "Saját Music",
     "slug": "sajat-music",
     "version": "1.0.0",
+    "backgroundColor": "#000000",
     "experiments": {
-      "newArchEnabled": true
+      "newArchEnabled": false
     },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#FFFFFF",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false,
@@ -25,6 +27,7 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
         "MODIFY_AUDIO_SETTINGS",
+        "READ_MEDIA_AUDIO",
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -37,15 +40,16 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-audio",
       "expo-file-system",
+      "expo-media-library",
       [
         "expo-build-properties",
         {
           "android": {
             "extraForegroundServiceTypes": [
               "mediaPlayback"
-            ]
+            ],
+            "kotlinVersion": "1.9.25"
           }
         }
       ],
@@ -65,7 +69,7 @@
         "behavior": "inset-swipe"
       },
       "eas": {
-        "projectId": "88c1cdde-7d52-4ad8-8e23-102cf84bcc8c"
+        "projectId": "f69dee12-a650-47a6-86bd-99482b199d9b"
       }
     }
   }

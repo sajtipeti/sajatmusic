@@ -1,12 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, TextInput, FlatList } from 'react-native';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Modal,
+  TextInput,
+  FlatList,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudio } from './AudioContext';
-import { useProgress } from 'react-native-track-player';
-
-// Figyeld meg a runOnJS importját!
-import { useSharedValue, runOnJS } from 'react-native-reanimated';
-import { Slider } from 'react-native-awesome-slider';
+import TrackPlayer, { Event } from 'react-native-track-player';
+import Slider from '@react-native-community/slider';
 
 interface PlayerScreenProps {
   visible: boolean;
@@ -15,48 +21,99 @@ interface PlayerScreenProps {
 
 export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
   const { currentSong, isPlaying, queue, playSong, togglePlayPause, skipNext, skipPrevious, seekTo } = useAudio();
-  
-  const progress = useProgress(1000);
-  
-  const [isSeeking, setIsSeeking] = useState(false);
+
   const [sliderRenderValue, setSliderRenderValue] = useState(0);
-  
+  const [displayDuration, setDisplayDuration] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+
   const [showQueue, setShowQueue] = useState(false);
   const [queueSearch, setQueueSearch] = useState('');
 
-  const progressValue = useSharedValue(0);
-  const min = useSharedValue(0);
-  const max = useSharedValue(1);
+  const isSeekingRef = useRef(false);
+  const seekCooldownRef = useRef(false);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const queueListRef = useRef<FlatList | null>(null);
 
-  const duration = Math.max(progress.duration || 1, 1);
+  const syncFromNative = React.useCallback(async () => {
+    if (isSeekingRef.current || seekCooldownRef.current) return;
+    try {
+      const { position, duration } = await TrackPlayer.getProgress();
+      if (!Number.isFinite(position) || position < 0) return;
+      if (!Number.isFinite(duration) || duration <= 0) return;
+
+      setDisplayDuration(duration);
+      setSliderRenderValue(position);
+    } catch {}
+  }, []);
 
   useEffect(() => {
-    max.value = duration;
-    if (!isSeeking) {
-      progressValue.value = progress.position;
-      setSliderRenderValue(progress.position);
+    if (!visible) {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+      return;
     }
-  }, [progress.position, duration, isSeeking]);
+
+    syncFromNative();
+    pollTimerRef.current = setInterval(syncFromNative, 500);
+
+    const progressListener = TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, (event: any) => {
+      if (isSeekingRef.current || seekCooldownRef.current) return;
+      const position = event?.position;
+      const duration = event?.duration;
+      if (!Number.isFinite(position) || position < 0) return;
+
+      if (Number.isFinite(duration) && duration > 0) {
+        setDisplayDuration(duration);
+      }
+      setSliderRenderValue(position);
+    });
+
+    const stateListener = TrackPlayer.addEventListener(Event.PlaybackState, () => syncFromNative());
+
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      progressListener.remove();
+      stateListener.remove();
+    };
+  }, [visible, syncFromNative]);
 
   useEffect(() => {
+    isSeekingRef.current = false;
     setIsSeeking(false);
-    progressValue.value = 0;
+    seekCooldownRef.current = false;
     setSliderRenderValue(0);
+    setDisplayDuration(0);
   }, [currentSong?.id]);
 
-  if (!currentSong) return null;
+  useEffect(() => {
+    if (!showQueue || !currentSong || queue.length === 0) return;
+    const idx = queue.findIndex((s) => s.id === currentSong.id);
+    if (idx < 0) return;
 
-  const formatTime = (seconds: number) => {
-    if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    const timer = setTimeout(() => {
+      try {
+        queueListRef.current?.scrollToIndex({ index: idx, animated: false, viewPosition: 0.5 });
+      } catch {}
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [showQueue, currentSong?.id, queue.length]);
+
+  const handleScrollToIndexFailed = (info: { index: number; averageItemLength: number }) => {
+    const offset = (info.averageItemLength || 50) * (info.index || 0);
+    try {
+      queueListRef.current?.scrollToOffset({ offset, animated: false });
+      setTimeout(() => {
+        try {
+          queueListRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.5 });
+        } catch {}
+      }, 150);
+    } catch {}
   };
 
-  const filteredQueue = queue.filter(s => s.title.toLowerCase().includes(queueSearch.toLowerCase()));
-
-  // ---- Biztonságos JS függvények a Workletekhez ----
   const handleSlidingStart = () => {
+    isSeekingRef.current = true;
     setIsSeeking(true);
   };
 
@@ -64,19 +121,53 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
     setSliderRenderValue(val);
   };
 
-  const handleSlidingComplete = (val: number) => {
-    seekTo(val).then(() => {
-      setTimeout(() => {
+  const handleSlidingComplete = async (val: number) => {
+    try {
+      await seekTo(val);
+      seekCooldownRef.current = true;
+      setTimeout(async () => {
+        try {
+          const { position, duration } = await TrackPlayer.getProgress();
+          if (Number.isFinite(position) && position >= 0) setSliderRenderValue(position);
+          if (Number.isFinite(duration) && duration > 0) setDisplayDuration(duration);
+        } catch {}
+        seekCooldownRef.current = false;
+        isSeekingRef.current = false;
         setIsSeeking(false);
-      }, 100);
-    }).catch(e => console.log('Seek error:', e));
+      }, 150);
+    } catch (e) {
+      console.log('Seek error:', e);
+      seekCooldownRef.current = false;
+      isSeekingRef.current = false;
+      setIsSeeking(false);
+    }
   };
-  // ---------------------------------------------------
+
+  const queueWithIndex = useMemo(() => queue.map((song, index) => ({ song, originalIndex: index })), [queue]);
+  const filteredQueue = useMemo(() => {
+    return queueSearch.trim()
+      ? queueWithIndex.filter(({ song }) => (song.title || '').toLowerCase().includes(queueSearch.toLowerCase()))
+      : queueWithIndex;
+  }, [queueWithIndex, queueSearch]);
+
+  const currentQueueIdx = useMemo(() => (currentSong ? queue.findIndex((s) => s.id === currentSong.id) : -1), [queue, currentSong?.id]);
+
+  if (!visible || !currentSong) return null;
+
+  const formatTime = (seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const totalInQueue = queue.length;
+  const currentDisplay = currentQueueIdx >= 0 ? `${totalInQueue}/${currentQueueIdx + 1}` : `${totalInQueue}/-`;
+  const queuePlaylistName = currentSong.playlistName || 'Lejátszási lista';
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false}>
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
       <View style={styles.container}>
-        
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.iconBtn} onPress={onClose}>
             <Ionicons name="chevron-down" size={32} color="#C084FC" />
@@ -101,61 +192,56 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
 
         <View style={styles.bottomControls}>
           <View style={styles.progressContainer}>
-            
             <Slider
               style={styles.slider}
-              progress={progressValue}
-              minimumValue={min}
-              maximumValue={max}
-              // Itt történik a varázslat: runOnJS használata!
-              onSlidingStart={() => {
-                runOnJS(handleSlidingStart)();
-              }}
-              onValueChange={(val) => {
-                runOnJS(handleValueChange)(val);
-              }}
-              onSlidingComplete={(val) => {
-                runOnJS(handleSlidingComplete)(val);
-              }}
-              theme={{
-                disableMinTrackTintColor: '#8A2BE2',
-                maximumTrackTintColor: '#333333',
-                minimumTrackTintColor: '#8A2BE2',
-                cacheTrackTintColor: '#333333',
-                bubbleBackgroundColor: '#8A2BE2',
-              }}
+              minimumValue={0}
+              maximumValue={displayDuration || 1}
+              value={sliderRenderValue}
+              onSlidingStart={handleSlidingStart}
+              onValueChange={handleValueChange}
+              onSlidingComplete={handleSlidingComplete}
+              minimumTrackTintColor="#8A2BE2"
+              maximumTrackTintColor="#333333"
+              thumbTintColor="#8A2BE2"
             />
 
             <View style={styles.timeRow}>
               <Text style={styles.timeText}>{formatTime(sliderRenderValue)}</Text>
-              <Text style={styles.timeText}>{formatTime(duration)}</Text>
+              <Text style={styles.timeText}>{formatTime(displayDuration)}</Text>
             </View>
           </View>
 
           <View style={styles.controlsRow}>
             <TouchableOpacity onPress={() => setShowQueue(!showQueue)} style={styles.controlBtn}>
-              <Ionicons name="list" size={28} color={showQueue ? "#FF00FF" : "#C084FC"} />
+              <Ionicons name="list" size={28} color={showQueue ? '#FF00FF' : '#C084FC'} />
             </TouchableOpacity>
-            
+
             <TouchableOpacity onPress={skipPrevious} style={styles.controlBtn}>
               <Ionicons name="play-skip-back" size={36} color="#C084FC" />
             </TouchableOpacity>
-            
+
             <TouchableOpacity onPress={togglePlayPause} style={styles.playButton}>
-              <Ionicons name={isPlaying ? "pause" : "play"} size={40} color="#C084FC" />
+              <Ionicons name={isPlaying ? 'pause' : 'play'} size={40} color="#C084FC" />
             </TouchableOpacity>
-            
+
             <TouchableOpacity onPress={skipNext} style={styles.controlBtn}>
               <Ionicons name="play-skip-forward" size={36} color="#C084FC" />
             </TouchableOpacity>
-            
+
             <View style={{ width: 44 }} />
           </View>
         </View>
 
         {showQueue && (
-          <View style={styles.queueSidebar}>
-            <View style={styles.queueTopRow}>
+          <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+            <TouchableOpacity style={styles.queueBackdrop} activeOpacity={1} onPress={() => setShowQueue(false)} />
+
+            <View style={styles.queueSidebar}>
+              <View style={styles.queueHeader}>
+                <Text style={styles.queuePlaylistName} numberOfLines={1}>{queuePlaylistName}</Text>
+                <Text style={styles.queuePositionText}>{currentDisplay}</Text>
+              </View>
+
               <View style={styles.queueSearchWrapper}>
                 <Ionicons name="search" size={18} color="#C084FC" style={{ marginRight: 8 }} />
                 <TextInput
@@ -166,30 +252,30 @@ export default function PlayerScreen({ visible, onClose }: PlayerScreenProps) {
                   onChangeText={setQueueSearch}
                 />
               </View>
-              <TouchableOpacity onPress={() => setShowQueue(false)} style={styles.closeQueueBtn}>
-                <Ionicons name="close" size={28} color="#C084FC" />
-              </TouchableOpacity>
-            </View>
 
-            <FlatList
-              data={filteredQueue}
-              keyExtractor={(item, index) => `${item.id}-${index}`}
-              renderItem={({ item }) => {
-                const isActive = item.id === currentSong.id;
-                return (
-                  <TouchableOpacity
-                    style={[styles.queueItem, isActive && styles.queueItemActive]}
-                    onPress={() => {
-                      playSong(item, queue);
-                    }}
-                  >
-                    <Text style={[styles.queueItemTitle, isActive && styles.queueItemTitleActive]} numberOfLines={2}>
-                      {item.title}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }}
-            />
+              <FlatList
+                ref={(ref) => { queueListRef.current = ref; }}
+                data={filteredQueue}
+                keyExtractor={(item, index) => `${item.song.id}::${item.originalIndex}::${index}`}
+                onScrollToIndexFailed={handleScrollToIndexFailed}
+                renderItem={({ item }) => {
+                  const isActive = item.song.id === currentSong.id;
+                  return (
+                    <TouchableOpacity
+                      style={[styles.queueItem, isActive && styles.queueItemActive]}
+                      onPress={() => playSong(item.song, queue)}
+                    >
+                      <Text style={[styles.queueItemPosition, isActive && styles.queueItemPositionActive]}>
+                        {totalInQueue}/{item.originalIndex + 1}
+                      </Text>
+                      <Text style={[styles.queueItemTitle, isActive && styles.queueItemTitleActive]} numberOfLines={2}>
+                        {item.song.title}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            </View>
           </View>
         )}
       </View>
@@ -215,13 +301,17 @@ const styles = StyleSheet.create({
   controlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 10 },
   controlBtn: { backgroundColor: '#000000', width: 44, height: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 22 },
   playButton: { backgroundColor: '#000000', width: 76, height: 76, borderRadius: 38, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#8A2BE2' },
+  queueBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)' },
   queueSidebar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '60%', backgroundColor: '#000000', borderRightWidth: 2, borderColor: '#8A2BE2', paddingTop: 50, paddingHorizontal: 10, zIndex: 20 },
-  queueTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  queueSearchWrapper: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 8, height: 40, borderWidth: 1, borderColor: '#8A2BE2' },
+  queueHeader: { marginBottom: 12, paddingHorizontal: 4 },
+  queuePlaylistName: { color: '#C084FC', fontSize: 16, fontWeight: '700', marginBottom: 2 },
+  queuePositionText: { color: '#888888', fontSize: 13, fontVariant: ['tabular-nums'] },
+  queueSearchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111111', borderRadius: 8, paddingHorizontal: 8, height: 40, borderWidth: 1, borderColor: '#8A2BE2', marginBottom: 12 },
   queueSearchInput: { flex: 1, color: '#FFFFFF', fontSize: 14 },
-  closeQueueBtn: { marginLeft: 8, padding: 4 },
-  queueItem: { paddingVertical: 12, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#222' },
+  queueItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#222222' },
   queueItemActive: { backgroundColor: 'rgba(138, 43, 226, 0.2)', borderRadius: 8, borderBottomWidth: 0 },
-  queueItemTitle: { color: '#8A2BE2', fontSize: 14 },
+  queueItemPosition: { color: '#666666', fontSize: 12, fontVariant: ['tabular-nums'], marginRight: 10, minWidth: 60 },
+  queueItemPositionActive: { color: '#FF00FF', fontWeight: '600' },
+  queueItemTitle: { color: '#8A2BE2', fontSize: 14, flex: 1 },
   queueItemTitleActive: { color: '#FF00FF', fontWeight: 'bold' },
 });

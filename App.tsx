@@ -1,21 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   TouchableOpacity,
   FlatList,
-  SafeAreaView,
-  StatusBar,
   ScrollView,
   TextInput,
-  ActivityIndicator
+  ActivityIndicator,
+  Alert
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AudioProvider, useAudio, Song } from './AudioContext';
 import { scanPlaylistsFolder, PlaylistFolder } from './fileScanner';
 import PlayerScreen from './PlayerScreen';
+import SettingsModal from './SettingsModal'; // ÚJ IMPORT
 
 const shuffleArray = <T,>(array: T[]): T[] => {
   const arr = [...array];
@@ -44,70 +46,78 @@ function MainApp() {
   const [playlistSearchQuery, setPlaylistSearchQuery] = useState('');
 
   const [isPlayerModalVisible, setPlayerModalVisible] = useState(false);
-
-  const storagePath = '/storage/emulated/0/Music/AppRootFolder/Playlists';
   const [isScanning, setIsScanning] = useState(false);
 
-  useEffect(() => {
-    StatusBar.setHidden(true, 'fade');
-  }, []);
+  // ÚJ STATE A BEÁLLÍTÁSOKHOZ
+  const [isSettingsVisible, setSettingsVisible] = useState(false);
 
   useEffect(() => {
     (async () => {
+      setIsScanning(true);
       const folders = await scanPlaylistsFolder();
       if (folders && folders.length > 0) {
         setPlaylists(folders);
       }
+      setIsScanning(false);
     })();
   }, []);
 
-  const formatSongs = (folder: PlaylistFolder): Song[] =>
-    folder.songs.map((s) => ({
+  const allSongs = useMemo(() => {
+    return playlists.flatMap((folder) =>
+      folder.songs.map((song) => ({
+        ...song,
+        title: song.title || 'Ismeretlen szám',
+        playlistName: folder.name,
+      }))
+    );
+  }, [playlists]);
+
+  const matchedGlobalSongs = useMemo(() => {
+    if (!globalSearchQuery.trim()) return [];
+    const q = globalSearchQuery.toLowerCase();
+    return allSongs.filter((s) => {
+      const title = s.title || '';
+      const plName = s.playlistName || '';
+      return title.toLowerCase().includes(q) || plName.toLowerCase().includes(q);
+    });
+  }, [allSongs, globalSearchQuery]);
+
+  const filteredPlaylistSongs = useMemo(() => {
+    if (!selectedPlaylist) return [];
+    const q = playlistSearchQuery.toLowerCase();
+    return selectedPlaylist.songs.filter((s) => {
+      const title = s.title || '';
+      return title.toLowerCase().includes(q);
+    });
+  }, [selectedPlaylist, playlistSearchQuery]);
+
+  const handlePlayPlaylist = (folder: PlaylistFolder, startSongId?: string, shuffle = false) => {
+    let formatted: Song[] = folder.songs.map((s) => ({
       id: s.id,
-      title: s.title,
+      title: s.title || 'Ismeretlen szám',
       uri: s.uri,
       playlistName: s.playlistName,
     }));
-
-  const handlePlayPlaylist = (folder: PlaylistFolder, startSongIndex = 0, shuffle = false) => {
-    let formatted = formatSongs(folder);
     if (formatted.length === 0) return;
 
     if (shuffle) {
       formatted = shuffleArray(formatted);
       playSong(formatted[0], formatted);
     } else {
-      playSong(formatted[startSongIndex], formatted);
+      const songToPlay = startSongId 
+        ? formatted.find(s => s.id === startSongId) || formatted[0] 
+        : formatted[0];
+      playSong(songToPlay, formatted);
     }
   };
-
-  const allSongs = playlists.flatMap((folder) =>
-    folder.songs.map((song) => ({
-      ...song,
-      playlistName: folder.name,
-    }))
-  );
-
-  const matchedGlobalSongs = globalSearchQuery.trim()
-    ? allSongs.filter(
-        (s) =>
-          s.title.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-          s.playlistName.toLowerCase().includes(globalSearchQuery.toLowerCase())
-      )
-    : [];
-
-  const filteredPlaylistSongs = selectedPlaylist
-    ? selectedPlaylist.songs.filter((s) =>
-        s.title.toLowerCase().includes(playlistSearchQuery.toLowerCase())
-      )
-    : [];
 
   const handleScanFolders = async () => {
     setIsScanning(true);
     try {
-      const folders = await scanPlaylistsFolder(true);
-      if (folders && folders.length > 0) {
-        setPlaylists(folders);
+      const folders = await scanPlaylistsFolder(true, true);
+      setPlaylists(folders || []);
+      if (!folders || folders.length === 0) {
+        Alert.alert('Nincs találat', 'Nem találtam zenéket a megadott mappában.');
       }
     } finally {
       setIsScanning(false);
@@ -115,17 +125,27 @@ function MainApp() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar hidden={true} />
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <StatusBar style="light" backgroundColor="#000000" hidden={true} />
 
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Lejátszási listák</Text>
-        <TouchableOpacity
-          style={styles.iconBtn}
-          onPress={() => setIsGlobalSearchOpen(!isGlobalSearchOpen)}
-        >
-          <Ionicons name="search" size={20} color="#C084FC" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row' }}>
+          {/* BEÁLLÍTÁSOK GOMB */}
+          <TouchableOpacity 
+            style={[styles.iconBtn, { marginRight: 10 }]} 
+            onPress={() => setSettingsVisible(true)}
+          >
+            <Ionicons name="settings-outline" size={20} color="#C084FC" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => setIsGlobalSearchOpen(!isGlobalSearchOpen)}
+          >
+            <Ionicons name="search" size={20} color="#C084FC" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {isGlobalSearchOpen && (
@@ -149,7 +169,7 @@ function MainApp() {
         {isGlobalSearchOpen && globalSearchQuery.trim() !== '' ? (
           <FlatList
             data={matchedGlobalSongs}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item, index) => item.id ? item.id : index.toString()}
             contentContainerStyle={{ paddingBottom: 120 }}
             renderItem={({ item }) => (
               <TouchableOpacity
@@ -188,13 +208,13 @@ function MainApp() {
               <View style={styles.playlistActions}>
                 <TouchableOpacity
                   style={styles.iconBtn}
-                  onPress={() => handlePlayPlaylist(selectedPlaylist, 0, true)}
+                  onPress={() => handlePlayPlaylist(selectedPlaylist, undefined, true)}
                 >
                   <Ionicons name="shuffle" size={22} color="#C084FC" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.playTextBtn}
-                  onPress={() => handlePlayPlaylist(selectedPlaylist, 0, false)}
+                  onPress={() => handlePlayPlaylist(selectedPlaylist, undefined, false)}
                 >
                   <Ionicons name="play" size={20} color="#FFF" style={{ marginRight: 4 }} />
                   <Text style={styles.playTextBtnLabel}>Lejátszás</Text>
@@ -215,12 +235,12 @@ function MainApp() {
 
             <FlatList
               data={filteredPlaylistSongs}
-              keyExtractor={(item) => item.id}
+              keyExtractor={(item, index) => item.id ? item.id : index.toString()}
               contentContainerStyle={{ paddingBottom: 120 }}
-              renderItem={({ item, index }) => (
+              renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.songRow}
-                  onPress={() => handlePlayPlaylist(selectedPlaylist, index, false)}
+                  onPress={() => handlePlayPlaylist(selectedPlaylist, item.id, false)}
                 >
                   <View style={styles.smallArtPlaceholder}>
                     <Ionicons name="musical-note" size={18} color="#6B21A8" />
@@ -234,7 +254,12 @@ function MainApp() {
           </View>
         ) : (
           <View style={{ flex: 1 }}>
-            {playlists.length === 0 ? (
+            {isScanning ? (
+              <View style={styles.emptyContainer}>
+                <ActivityIndicator size="large" color="#C084FC" />
+                <Text style={styles.emptyText}>Zenék keresése...</Text>
+              </View>
+            ) : playlists.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Ionicons name="folder-open-outline" size={60} color="#333" />
                 <Text style={styles.emptyText}>Nincsenek lejátszási listák</Text>
@@ -244,14 +269,14 @@ function MainApp() {
                   onPress={handleScanFolders}
                   disabled={isScanning}
                 >
-                  {isScanning ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.scanBtnText}>Mappák beolvasása</Text>}
+                  <Text style={styles.scanBtnText}>Mappák beolvasása</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
-                {playlists.map((pl) => (
+                {playlists.map((pl, index) => (
                   <TouchableOpacity
-                    key={pl.name}
+                    key={pl.name ? pl.name : index.toString()}
                     style={styles.playlistRow}
                     onPress={() => setSelectedPlaylist(pl)}
                   >
@@ -266,12 +291,6 @@ function MainApp() {
                 ))}
               </ScrollView>
             )}
-
-            <View style={styles.storagePathFooter}>
-              <Text style={styles.storagePathText} numberOfLines={1}>
-                Mappa helye: {storagePath}
-              </Text>
-            </View>
           </View>
         )}
       </View>
@@ -311,16 +330,24 @@ function MainApp() {
         visible={isPlayerModalVisible}
         onClose={() => setPlayerModalVisible(false)}
       />
+
+      {/* BEÁLLÍTÁSOK MODAL BEHÍVÁSA */}
+      <SettingsModal 
+        visible={isSettingsVisible} 
+        onClose={() => setSettingsVisible(false)} 
+      />
     </SafeAreaView>
   );
 }
 
 export default function App() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <AudioProvider>
-        <MainApp />
-      </AudioProvider>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#000000' }}>
+      <SafeAreaProvider>
+        <AudioProvider>
+          <MainApp />
+        </AudioProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
@@ -427,13 +454,6 @@ const styles = StyleSheet.create({
   },
   songTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '500' },
   songSub: { color: '#888888', fontSize: 12, marginTop: 2 },
-  storagePathFooter: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderTopWidth: 0.5,
-    borderTopColor: '#1A1A20',
-  },
-  storagePathText: { color: '#555555', fontSize: 11, textAlign: 'center' },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   emptyText: { color: '#888888', fontSize: 15, marginTop: 12, marginBottom: 20 },
   scanBtn: { backgroundColor: '#6B21A8', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
