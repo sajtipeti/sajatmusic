@@ -19,6 +19,8 @@ Az alkalmazás az **Android MediaStore** rendszerén keresztül olvassa be a zen
 
 
 
+```text
+
 (A rendszer felépítése:
 
 Gyökér mappa: AppRootFolder (Ez fogja össze az alkalmazás fájljait).
