@@ -12,12 +12,46 @@ Egy saját fejlesztésű, Androidra optimalizált zenelejátszó alkalmazás, am
 
 ## 📂 Hogyan működik a fájlrendszer?
 
-Az alkalmazás nem egy saját belső adatbázisba másolja a fájlokat, hanem az **Android MediaStore** rendszerén keresztül olvassa be azokat. A tiszta működés érdekében az alkalmazás kizárólag egy előre meghatározott mappaszerkezetből dolgozik.
-
-A zenék beolvasásához a következő mappastruktúrát kell létrehozni a telefon belső tárhelyén:
-
-A Belső tárhelyen belül: \Music\Approotfolder\Playlists mappába kell helyezni zenefájlokat tartalmazó mappákat,
-a betett mappák megjelennek lejátszási listákként az appban.
+Az alkalmazás az **Android MediaStore** rendszerén keresztül olvassa be a zenéket. Mivel az Android 11+ szigorú biztonsági szabályai (Scoped Storage) nem engedik, hogy az app automatikusan mappákat hozzon létre a nyilvános tárhelyen, a zenék helyes beolvasásához a felhasználónak manuálisan kell létrehoznia a következő mappastruktúrát a telefon belső tárhelyén:
 
 ```text
 /storage/emulated/0/Music/AppRootFolder/Playlists/
+
+
+
+(A rendszer felépítése:
+
+Gyökér mappa: AppRootFolder (Ez fogja össze az alkalmazás fájljait).
+
+Playlists mappa: Ebben a mappában kell létrehozni az almappákat.
+
+Almappák (Lejátszási listák): Minden egyes almappa egy-egy külön lejátszási listát jelent az alkalmazásban (pl. Rock, Kedvencek, Albumok). A zenefájlokat ezekbe az almappákba kell elhelyezni.
+
+Az alkalmazás indításkor beolvassa a telefon zenei adatbázisát, de kizárólag azokat a fájlokat jeleníti meg, amelyek ebben a Playlists mappában (és annak almappáiban) találhatók. A mappák nevei szolgálnak a lejátszási listák címeiként.
+
+Támogatott formátumok: .mp3, .m4a, .wav, .flac, .webm
+
+📥 Telepítés
+Töltsd le a legfrissebb .apk fájlt a Releases fülről.
+
+Telepítsd a telefonodra (szükség lehet az "Ismeretlen forrásból származó alkalmazások" engedélyezésére).
+
+Indítás után engedélyezd a zenei fájlokhoz való hozzáférést.
+
+Hozd létre a fent leírt mappaszerkezetet, és másold bele a zenéidet.
+
+Indítsd újra az alkalmazást, és a főoldalon a "Mappák beolvasása" gombbal töltsd be a listákat.
+
+🛠️ Technológiai stack
+Keretrendszer: React Native (Expo SDK 52)
+
+Nyelv: TypeScript
+
+Hanglejátszás: react-native-track-player (v4)
+
+UI: React Native Reanimated, Community Slider
+
+Fejlesztés: AI-asszisztált fejlesztés (Gemini / Claude) a kódgeneráláshoz és a hibakereséshez.
+
+📄 Licenc
+Ez a projekt az MIT License feltételei szerint használható. A részletekért lásd a LICENSE fájlt.)
